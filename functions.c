@@ -29,7 +29,7 @@ Node** read_create_graph(FILE* fp, int* rows, int* columns, int* node_count)
                 board_here = false;
             
             Node* new_vert = malloc(sizeof(*new_vert));
-            *new_vert = (Node) {.dist = INT_MAX, .head = NULL, .pred = NULL, .node_idx = vert_idx, .is_board_here = board_here, .board_number = vert_idx, .in_pq = true};
+            *new_vert = (Node) {.dist = INT_MAX, .head = NULL, .pred = NULL, .heap_pos = vert_idx, .is_board_here = board_here, .board_number = vert_idx, .in_pq = true};
 
             list[vert_idx] = new_vert;
             vert_idx++;
@@ -40,26 +40,25 @@ Node** read_create_graph(FILE* fp, int* rows, int* columns, int* node_count)
     return list;
 }
 
-static void add_adj(Node* base, Node* adj, bool is_collinear)
+static void add_adj(Node* base, Node* adj, bool is_collinear, int node_count)
 {
     int weight = 2;
-    if(base -> node_idx >= 0 && adj -> node_idx != -2)
+    if(base -> board_number >= 0 && adj -> board_number != node_count + 1)
     {
         if(is_collinear == false && adj -> is_board_here == true)
             weight = 1;
         if(is_collinear == true && adj -> is_board_here == true)
             weight = 0;
     }
-    else if(base -> node_idx == -1)
+    else if(base -> board_number == node_count)
     {
         if(adj -> is_board_here == true)
             weight = 0;
         else
             weight = 1;
     }
-    else if(adj -> node_idx == -2)
-        weight = 1;
-    
+    else if(adj -> board_number == node_count + 1)
+        weight = 1; 
 
     listNode* new = malloc(sizeof(*new));
     *new = (listNode) {.weight = weight, .next = NULL, .board_number = adj -> board_number};
@@ -82,32 +81,29 @@ void assign_adjacency(int rows, int columns, int node_count, Node* graph[])
 
     Node* left_bank = graph[node_count];
     for(int row_idx = 0; row_idx < rows - 1; row_idx++)
-        add_adj(left_bank, graph[row_idx * columns], false);
-    
+        add_adj(left_bank, graph[row_idx * columns], false, node_count);
+
     for(int idx = 0; idx < node_count; idx++)
     {
-        //printf("Node: %3d X: %3d Y: %3d\n", idx, x, y);
-        
-        // End Assign Left
         if(x + 1 <= columns) // Right
-            add_adj(graph[idx], graph[idx + 1], false); 
+            add_adj(graph[idx], graph[idx + 1], false, node_count); 
         if(x - 1 > 0) // Left
-            add_adj(graph[idx], graph[idx - 1], false);
+            add_adj(graph[idx], graph[idx - 1], false, node_count);
         if(y - 1 > 0) // Up
-            add_adj(graph[idx], graph[idx - columns], true);
+            add_adj(graph[idx], graph[idx - columns], true, node_count);
         if(y + 1 <= rows - 1) // Down 
-            add_adj(graph[idx], graph[idx + columns], true);
+            add_adj(graph[idx], graph[idx + columns], true, node_count);
         if(y - 1 > 0 && x + 1 <= columns) // Up And To The Right
-            add_adj(graph[idx], graph[idx - columns + 1], false);
+            add_adj(graph[idx], graph[idx - columns + 1], false, node_count);
         if(y + 1 <= rows - 1 && x + 1 <= columns) // Down And To The Right
-            add_adj(graph[idx], graph[idx + columns + 1], false);
+            add_adj(graph[idx], graph[idx + columns + 1], false, node_count);
         if(y + 1 <= rows - 1 && x - 1 > 0) // Down And To The Left
-            add_adj(graph[idx], graph[idx + columns - 1], false);
+            add_adj(graph[idx], graph[idx + columns - 1], false, node_count);
         if(y - 1 > 0 && x - 1 > 0) // Up And To The Left
-            add_adj(graph[idx], graph[idx - columns - 1], false);
+            add_adj(graph[idx], graph[idx - columns - 1], false, node_count);
 
         if(x == columns)
-            add_adj(graph[idx], graph[node_count + 1], false);
+            add_adj(graph[idx], graph[node_count + 1], false, node_count);
 
         x++;
         if(x > columns)
@@ -118,126 +114,105 @@ void assign_adjacency(int rows, int columns, int node_count, Node* graph[])
     }
     return;
 }
-// Nothing After This Point Should Use The Boards PQ IDX
-void upward_heapify(Node** heap, Node* node, int* pq_idx)
+
+void upward_heapify(Node** heap, Node* node)
 {
-    int child_idx = pq_idx[node -> board_number];
-    int parent_idx = (child_idx - 1) / 2;
+    int child = node -> heap_pos;
+    int parent = (child - 1) / 2;
 
-    while(heap[parent_idx] -> dist > heap[child_idx] -> dist)
+    Node* new = heap[child];
+
+    while(child > 0 && heap[parent] -> dist > new -> dist)
     {
-        Node* parent = heap[parent_idx];
-        Node* child = heap[child_idx];
-        Node** parent_loc = &heap[parent_idx];
-        Node** child_loc = &heap[child_idx];
+        heap[child] = heap[parent];
+        heap[child] -> heap_pos = child;
 
-        *parent_loc = child;
-        *child_loc = parent;
-
-        pq_idx[child -> board_number] = parent_idx;
-        pq_idx[parent -> board_number] = child_idx;
-
-        child_idx = parent_idx;
-        parent_idx = (parent_idx - 1) / 2;
-
-        if(parent_idx < 0)
-            break;
-    }    
+        child = parent;
+        parent = (child - 1) / 2;
+    }
+    heap[child] = new;
+    heap[child] -> heap_pos = child;
+    node -> heap_pos = child;
+    return;
 }
 
-void downward_heapify(Node** heap, Node* node, int* pq_idx, int pq_size)
+void downward_heapify(Node** heap, Node* node, int heap_size)
 {
-    int parent_idx = pq_idx[node -> board_number];
-    int child_idx = parent_idx * 2 + 1;
+    Node* temp = node;
 
-    while(child_idx < pq_size)
+    int i = node -> heap_pos;
+    int j = 2 * i + 1;
+
+    while(j <= heap_size - 1)
     {
-        Node* parent = heap[parent_idx];
-        Node* child = heap[child_idx];
-
-        if(child_idx < pq_size - 1 && child -> dist > heap[child_idx + 1] -> dist)
-            child_idx++;
-
-        if(heap[parent_idx] ->dist <= heap[child_idx] -> dist)
+        if(j < heap_size - 1 && heap[j] -> dist > heap[j + 1] -> dist)
+            j++;
+        if(temp -> dist <= heap[j] -> dist)
             break;
         else
         {
-            heap[parent_idx] = child;
-            heap[child_idx] = parent;
-            pq_idx[child -> board_number] = parent_idx;
-            pq_idx[parent -> board_number] = child_idx;
+            heap[i] = heap[j];
+            heap[j] -> heap_pos = i;
+            i = j;
         }
-
-        parent_idx = child_idx;
-        child_idx = child_idx * 2 + 1;
+        j = 2 * i + 1;
     }
+    heap[i] = temp;
+    heap[i] -> heap_pos = i;
+    node -> heap_pos = i;
 }
 
-Node* extract_min(Node** graph, int pq_length, int* pq_idx)
+Node* extract_min(Node** graph, int heap_size)
 {
     Node* min = graph[0];
-    Node* end = graph[pq_length - 1];
+    Node* end = graph[heap_size - 1];
 
-    graph[pq_length - 1] = min;
+    graph[heap_size - 1] = min;
+    graph[heap_size - 1] -> heap_pos = heap_size - 1;
+
     graph[0] = end;
+    graph[0] -> heap_pos = 0;
 
-    pq_idx[min -> board_number] = pq_length - 1;
-    pq_idx[end -> board_number] = 0;
-
-    downward_heapify(graph, graph[0], pq_idx, pq_length - 1);
+    downward_heapify(graph, graph[0], heap_size - 1);
 
     return min;
 }
-/*
-static void print_heap(int length, Node** heap)
-{
-    for(int i = 0; i < length; i++)
-    {
-        printf("IDX: %d Board: %d Dist: %d\n", i, heap[i] -> board_number, heap[i] -> dist);
-    }
-    printf("\n--------------\n");
-}
 
-static void print_idx(int length, int* idxs)
-{
-    for(int i = 0; i < length; i++)
-    {
-        printf("Board: %d At Idx: %d\n", i, idxs[i]);
-    }
-    printf("\n--------------\n");
-}
-*/
-int* dijkstras(Node** graph, Node* start, int length)
+Node** dijkstras(Node** graph, Node* start, int length)
 {
     int pq_length = length;
-    int* pq_idx = malloc(sizeof(*pq_idx) * length);
+
+    Node** pointer_array = malloc(sizeof(*pointer_array) * length);
     for(int idx = 0; idx < length; idx++) // Left Bank Is Board Count // Right Is + 1
-        pq_idx[idx] = graph[idx] -> board_number;
+        pointer_array[idx] = &(*graph[idx]);
     
-    upward_heapify(graph, graph[length - 2], pq_idx);
+    upward_heapify(graph, graph[length - 2]);
 
     while(pq_length > 0)
     {
-        Node* min = extract_min(graph, pq_length, pq_idx);
+        Node* min = extract_min(graph, pq_length);
         pq_length--;
+
 
         listNode* adj = min -> head;
         while(adj != NULL)
         {
-            Node* adj_node = graph[pq_idx[adj -> board_number]];
+            Node* adj_node = pointer_array[adj -> board_number];
 
             if(adj_node -> in_pq == true && adj_node -> dist > min -> dist + adj -> weight)
             {
                 adj_node -> dist = min -> dist + adj -> weight;
                 adj_node -> pred = min;
 
-                upward_heapify(graph, graph[pq_idx[adj -> board_number]], pq_idx);
+                int heap_pos = pointer_array[adj -> board_number] -> heap_pos;
+                upward_heapify(graph, graph[heap_pos]);
             }
 
             adj = adj -> next;
         } 
-    }
-    return pq_idx;
+    } 
+
+    return pointer_array;
 }
 
 static void push(StackNode** stacktop, StackNode* new)
@@ -255,7 +230,7 @@ static StackNode* pop(StackNode** stacktop)
     return popper;
 }
 
-void write_output(Node* right_bank, int node_count, Node** graph, int* pq_idx, FILE* fp, int rows, int columns)
+void write_output(Node* right_bank, int node_count, FILE* fp, int rows, int columns)
 {
     Node* curr = right_bank;
     StackNode* stack_top = NULL;
@@ -294,25 +269,41 @@ void write_output(Node* right_bank, int node_count, Node** graph, int* pq_idx, F
             fprintf(fp, "(%d,%d)(%d,%d)\n", y, -1, y, 0);
             fprintf(fp, "(%d,%d)(%d,%d)\n", y, x, y + 1, x);
         }
-
-        if(RNode -> board_number == node_count + 1)
+        else if(RNode -> board_number == node_count + 1)
+            fprintf(fp, "(%d,%d)(%d,%d)\n", py, px, py, px + 1); 
+        else if(x == px + 1 && py == y) // Case 1
         {
-            fprintf(fp, "(%d,%d)(%d,%d)\n", py, px, py, px + 1);
+            fprintf(fp, "(%d,%d)(%d,%d)\n", py, px, y, x); 
+            fprintf(fp, "(%d,%d)(%d,%d)\n", y, x, y + 1, x); 
         }
-        
-        if(x == px + 1 && py == y)
+        else if(x == px - 1 && py == y) // Case 2
         {
-            fprintf(fp, "(%d,%d)(%d,%d)\n", y, px, y, x);
-            fprintf(fp, "(%d,%d)(%d,%d)\n", y, x, y + 1, x);
+            fprintf(fp, "(%d,%d)(%d,%d)\n", py, px, y, x); 
+            fprintf(fp, "(%d,%d)(%d,%d)\n", y, x, y + 1, x); 
         }
-        if(x == px + 1 && y == py - 1)
+        else if(x == px && py - 1 == y) // Case 3
         {
-            fprintf(fp, "(%d,%d)(%d,%d)\n", py, px, y + 1, x);
-            fprintf(fp, "(%d,%d)(%d,%d)\n", y, x, y + 1, x);
+            if(RNode -> is_board_here)
+                fprintf(fp, "(%d,%d)(%d,%d)\n", py, px, py, px + 1); 
+            fprintf(fp, "(%d,%d)(%d,%d)\n", y, x, py, px);  
+        }
+        else if(x == px && py + 1 == y) // Case 4
+        {
+            if(RNode -> is_board_here)
+                fprintf(fp, "(%d,%d)(%d,%d)\n", py, px, py, px + 1); 
+            fprintf(fp, "(%d,%d)(%d,%d)\n", y, x, py, px);  
+        }
+        else if(x == px + 1 && py - 1 == y) // Case 5
+        {
+            fprintf(fp, "(%d,%d)(%d,%d)\n", py, px, y + 1, x); 
+            fprintf(fp, "(%d,%d)(%d,%d)\n", y, x, y + 1, x); 
+        }
+        else if(x == px + 1 && py + 1 == y) // Case 6
+        {
+            fprintf(fp, "(%d,%d)(%d,%d)\n", py + 1, px, y, x); 
+            fprintf(fp, "(%d,%d)(%d,%d)\n", y, x, y + 1, x); 
         }
 
-
-       // printf("%d:(%d,%d)  %d:(%d,%d)\n",LNode -> board_number, px, py, RNode -> board_number, x, y);
         LNode = RNode;
         px = x;
         py = y;

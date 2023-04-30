@@ -13,10 +13,11 @@ typedef struct _Node { // Node == Board
     struct _Node* pred;
     bool is_board_here; 
     bool in_pq;
-    int node_idx;
     int board_number; // The Number Of The Board
     listNode* head;
     int dist; 
+
+    int heap_pos;
 } Node;
 
 typedef struct _StackNode {
@@ -28,12 +29,12 @@ Node** read_create_graph(FILE* fp, int* rows, int* columns, int* node_count);
 
 void assign_adjacency(int rows, int columns, int node_count, Node* graph[]);
 
-void upward_heapify(Node** heap, Node* node, int* pq_idx);
+void upward_heapify(Node** heap, Node* node);
 
-void downward_heapify(Node** heap, Node* node, int* pq_idx, int pq_size);
+void downward_heapify(Node** heap, Node* node, int heap_size);
 
-Node* extract_min(Node** heap, int pq_length, int* pq_idx);
+Node* extract_min(Node** heap, int heap_size);
 
-int* dijkstras(Node** graph, Node* start, int length);
+Node** dijkstras(Node** graph, Node* start, int length);
 
-void write_output(Node* right_bank, int node_count, Node** graph, int* pq_idx, FILE* fp, int rows, int columns);
+void write_output(Node* right_bank, int node_count, FILE* fp, int rows, int columns);
